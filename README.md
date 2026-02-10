@@ -24,7 +24,13 @@
 ### Windows
 
 1. 將 [`git-hi.cmd`](git-hi.cmd:1) 放到系統 PATH 中的資料夾（例如 `C:\Users\你\bin`，並將該資料夾加入 PATH）。
-2. 在 cmd 或 PowerShell 中可直接使用 `git hi ...` 呼叫（Git 會找到 `git-hi.cmd` 來執行）。
+2. 如果已經加入 PATH ，且重新開啟 Terminal 後仍沒作用，執行以下命令來設定 git alias：
+
+```bash
+git config --global alias.hi "!git-hi.cmd"
+```
+
+3. 在 cmd 或 PowerShell 中可直接使用 `git hi ...` 呼叫（Git 會找到 `git-hi.cmd` 來執行）。
 
 ## 使用方法（概覽）
 
