@@ -6,6 +6,7 @@
 - [`git-hi.cmd`](git-hi.cmd:1) (Windows，Batch 檔)
 
 用途：在多個專案資料夾上執行常用的 Git 維護動作（pull、checkout、prune、gc、reset、列出衝突、產出 tag 間變更等）。
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/mrhihi/git-hi)
 
 ## 安裝
 
