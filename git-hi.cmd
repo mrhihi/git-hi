@@ -20,6 +20,8 @@ setlocal enabledelayedexpansion
     if "%_COMMAND%" EQU "--gc" ( call :gc %_ARG1% & goto :eof )
     if "%_COMMAND%" EQU "--ls-conflicted" ( call :ls-conflicted %_ARG1% & goto :eof )
     if "%_COMMAND%" EQU "--reset" ( call :reset %_ARG1% & goto :eof )
+    if "%_COMMAND%" EQU "--show-auth" ( call :show-auth %_ARG1% & goto :eof )
+    if "%_COMMAND%" EQU "--set-token" ( call :set-token %_ARG1% %_ARG2% & goto :eof )
     if "%_COMMAND%" EQU "--log" (
         if "%_ARG3%" EQU "" goto :BadParam
         call :log %_ARG1% %_ARG2% %_ARG3%
@@ -36,13 +38,21 @@ setlocal enabledelayedexpansion
     echo  (1) --prune all            (2) --show-current all
     echo  (3) --pull all             (4) --checkout all master
     echo  (5) --gc all               (6) --ls-conflicted all
-    echo  (7) --reset all
+    echo  (7) --reset all            (8) --show-auth all
+    echo  (9) --set-token all {token}
     echo.
     echo  (q) 離開
     echo.
-    choice /C 1234567q /M "請選擇:"
+    choice /C 123456789q /M "請選擇:"
     
-    if errorlevel 8 goto :eof
+    if errorlevel 10 goto :eof
+    if errorlevel 9 (
+        set /p _TOK=請輸入新 Token:
+        call :set-token all !_TOK!
+        pause
+        goto :Menu
+    )
+    if errorlevel 8 ( call :show-auth all & pause & goto :Menu )
     if errorlevel 7 ( call :reset all & pause & goto :Menu )
     if errorlevel 6 ( call :ls-conflicted all & pause & goto :Menu )
     if errorlevel 5 ( call :gc all & pause & goto :Menu )
@@ -62,6 +72,8 @@ setlocal enabledelayedexpansion
     echo   git hi [--force] --ls-conflicted {project^|all}
     echo   git hi [--force] --reset {project^|all}
     echo   git hi --log {project^|all} {tag1} {tag2}
+    echo   git hi --show-auth {project^|all}
+    echo   git hi --set-token {project^|all} {token^|user:token}
     goto :eof
 
 :choiceProject
@@ -200,6 +212,141 @@ setlocal enabledelayedexpansion
         if exist "%%d\.git" (
             echo [%%d] 優化中...
             pushd %%d & git gc --aggressive & popd
+        )
+    )
+    exit /b 0
+
+:show-auth
+    call :choiceProject %1 || goto :BadParam
+    for /d %%d in (%Projects%) do (
+        if exist "%%d\.git" (
+            echo [%%d]
+            pushd %%d
+            set "remote_url="
+            for /f "tokens=*" %%u in ('git config --get remote.origin.url') do set "remote_url=%%u"
+
+            if "!remote_url!" EQU "" (
+                echo   無 remote origin
+            ) else (
+                echo   Remote URL: !remote_url!
+
+                set "prefix=!remote_url:~0,8!"
+                if /I not "!prefix!"=="https://" (
+                    echo   驗證模式: ssh/other
+                    echo   非 HTTPS remote，無法從 config URL 解析 token
+                ) else (
+                    set "rest=!remote_url:~8!"
+                    for /f "tokens=1* delims=/" %%a in ("!rest!") do (
+                        set "authority=%%a"
+                        set "path_part=%%b"
+                    )
+
+                    set "userinfo="
+                    set "host=!authority!"
+                    for /f "tokens=1,2 delims=@" %%a in ("!authority!") do (
+                        if not "%%b"=="" (
+                            set "userinfo=%%a"
+                            set "host=%%b"
+                        )
+                    )
+
+                    if "!userinfo!"=="" (
+                        echo   驗證模式: https ^(no token in remote.origin.url^)
+                        echo   Token: 未設定在 config URL
+                    ) else (
+                        set "username="
+                        set "token="
+                        for /f "tokens=1,2 delims=:" %%a in ("!userinfo!") do (
+                            set "username=%%a"
+                            set "token=%%b"
+                        )
+                        if "!token!"=="" (
+                            set "token=!userinfo!"
+                            set "username="
+                        )
+                        echo   驗證模式: token ^(from remote.origin.url^)
+                        if "!username!"=="" (
+                            echo   使用者名稱: 未指定
+                        ) else (
+                            echo   使用者名稱: !username!
+                        )
+                        echo   Token: !token!
+                    )
+                )
+            )
+            popd
+        )
+    )
+    exit /b 0
+
+:set-token
+    call :choiceProject %1 || goto :BadParam
+    set "input_raw=%~2"
+    if "%input_raw%" EQU "" goto :BadParam
+
+    set "has_user_token_pair=N"
+    set "forced_username="
+    set "new_token=%input_raw%"
+    for /f "tokens=1* delims=:" %%a in ("%input_raw%") do (
+        if not "%%b"=="" (
+            set "has_user_token_pair=Y"
+            set "forced_username=%%a"
+            set "new_token=%%b"
+        )
+    )
+    if "%new_token%" EQU "" goto :BadParam
+
+    for /d %%d in (%Projects%) do (
+        if exist "%%d\.git" (
+            pushd %%d
+            set "remote_url="
+            for /f "tokens=*" %%u in ('git config --get remote.origin.url') do set "remote_url=%%u"
+
+            if "!remote_url!" EQU "" (
+                echo [%%d] 無 remote origin，略過
+            ) else (
+                set "prefix=!remote_url:~0,8!"
+                if /I not "!prefix!"=="https://" (
+                    echo [%%d] 非 HTTPS remote，略過
+                ) else (
+                    set "rest=!remote_url:~8!"
+                    for /f "tokens=1* delims=/" %%a in ("!rest!") do (
+                        set "authority=%%a"
+                        set "path_part=%%b"
+                    )
+
+                    set "userinfo="
+                    set "host=!authority!"
+                    for /f "tokens=1,2 delims=@" %%a in ("!authority!") do (
+                        if not "%%b"=="" (
+                            set "userinfo=%%a"
+                            set "host=%%b"
+                        )
+                    )
+
+                    set "username="
+                    set "old_token="
+                    if not "!userinfo!"=="" (
+                        for /f "tokens=1,2 delims=:" %%a in ("!userinfo!") do (
+                            set "username=%%a"
+                            set "old_token=%%b"
+                        )
+                        if "!old_token!"=="" set "username="
+                    )
+
+                    if "!has_user_token_pair!"=="Y" set "username=!forced_username!"
+
+                    if "!username!"=="" (
+                        set "new_url=https://!new_token!@!host!/!path_part!"
+                    ) else (
+                        set "new_url=https://!username!:!new_token!@!host!/!path_part!"
+                    )
+
+                    git config remote.origin.url "!new_url!"
+                    echo [%%d] Token 已更新（直接寫入 remote.origin.url）
+                )
+            )
+            popd
         )
     )
     exit /b 0

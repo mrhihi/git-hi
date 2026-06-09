@@ -19,7 +19,7 @@ show_help() {
     echo "  git hi [--force] --reset {project|all} 自動偵測主分支並強制重置"
     echo "  git hi --log {project|all} {t1} {t2}  產出兩個 Tag 間的變更報告"
     echo "  git hi --show-auth {project|all}        查看目前 git 驗證模式，若為 token 驗證則印出 token"
-    echo "  git hi --set-token {project|all} {token}  置換 Token"
+    echo "  git hi --set-token {project|all} {token|user:token}  置換 Token"
     echo ""
     echo "參數說明:"
     echo "  --force    執行 pull/checkout/reset 前先進行 git clean 與 hard reset"
@@ -111,10 +111,23 @@ do_show_auth() {
 
 do_set_token() {
     choice_projects $1
-    local new_token=$2
-    if [[ -z "$new_token" ]]; then
+    local token_input=$2
+    if [[ -z "$token_input" ]]; then
         echo "請提供新的 Token"
         return
+    fi
+
+    local forced_username=""
+    local has_user_token_pair=false
+    local new_token="$token_input"
+    if [[ "$token_input" == *":"* ]]; then
+        has_user_token_pair=true
+        forced_username=${token_input%%:*}
+        new_token=${token_input#*:}
+        if [[ -z "$new_token" ]]; then
+            echo "格式錯誤，請使用 token 或 user:token"
+            return
+        fi
     fi
 
     for d in $PROJECT_LIST; do
@@ -148,6 +161,10 @@ do_set_token() {
             fi
 
             local new_url=""
+            if [[ "$has_user_token_pair" == true ]]; then
+                username="$forced_username"
+            fi
+
             if [[ -n "$username" ]]; then
                 new_url="https://${username}:${new_token}@${host}/${path_part}"
             else
