@@ -18,6 +18,8 @@ show_help() {
     echo "  git hi --ls-conflicted {project|all}  列出衝突檔案"
     echo "  git hi [--force] --reset {project|all} 自動偵測主分支並強制重置"
     echo "  git hi --log {project|all} {t1} {t2}  產出兩個 Tag 間的變更報告"
+    echo "  git hi --show-auth {project|all}        查看目前 git 驗證模式，若為 token 驗證則印出 token"
+    echo "  git hi --set-token {project|all} {token}  置換 Token"
     echo ""
     echo "參數說明:"
     echo "  --force    執行 pull/checkout/reset 前先進行 git clean 與 hard reset"
@@ -60,6 +62,104 @@ get_main_branch() {
 }
 
 # --- 指令功能實作 ---
+
+do_show_auth() {
+    choice_projects $1
+    for d in $PROJECT_LIST; do
+        if [[ -d "$d/.git" ]]; then
+            echo "\033[1;32m[$d]\033[0m"
+            cd "$d"
+
+            local remote_url=$(git config --get remote.origin.url 2>/dev/null)
+            if [[ -z "$remote_url" ]]; then
+                echo "  （無 remote origin）"
+                cd ..
+                continue
+            fi
+            echo "  Remote URL: $remote_url"
+
+            if [[ "$remote_url" == https://* ]]; then
+                local authority=$(echo "$remote_url" | sed -n 's|^https://\([^/]*\)/.*|\1|p')
+                local userinfo=""
+                if [[ "$authority" == *"@"* ]]; then
+                    userinfo=${authority%@*}
+                fi
+
+                if [[ -n "$userinfo" ]]; then
+                    local username="" token=""
+                    if [[ "$userinfo" == *":"* ]]; then
+                        username=${userinfo%%:*}
+                        token=${userinfo#*:}
+                    else
+                        token=$userinfo
+                    fi
+                    echo "  驗證模式: \033[1;36mtoken (from remote.origin.url)\033[0m"
+                    echo "  使用者名稱: ${username:-（未指定）}"
+                    echo "  Token: \033[1;33m$token\033[0m"
+                else
+                    echo "  驗證模式: \033[1;36mhttps (no token in remote.origin.url)\033[0m"
+                    echo "  Token: （未設定在 config URL）"
+                fi
+            else
+                echo "  驗證模式: \033[1;36mssh/other\033[0m"
+                echo "  （非 HTTPS remote，無法從 config URL 解析 token）"
+            fi
+            cd ..
+        fi
+    done
+}
+
+do_set_token() {
+    choice_projects $1
+    local new_token=$2
+    if [[ -z "$new_token" ]]; then
+        echo "請提供新的 Token"
+        return
+    fi
+
+    for d in $PROJECT_LIST; do
+        if [[ -d "$d/.git" ]]; then
+            cd "$d"
+
+            local remote_url=$(git config --get remote.origin.url 2>/dev/null)
+            if [[ -z "$remote_url" ]]; then
+                echo "\033[1;31m[$d] 無 remote origin，略過\033[0m"
+                cd ..
+                continue
+            fi
+
+            if [[ "$remote_url" != https://* ]]; then
+                echo "\033[1;31m[$d] 非 HTTPS remote，略過\033[0m"
+                cd ..
+                continue
+            fi
+
+            local authority=$(echo "$remote_url" | sed -n 's|^https://\([^/]*\)/.*|\1|p')
+            local path_part=$(echo "$remote_url" | sed -n 's|^https://[^/]*/\(.*\)$|\1|p')
+
+            local host="$authority"
+            local username=""
+            if [[ "$authority" == *"@"* ]]; then
+                local userinfo=${authority%@*}
+                host=${authority#*@}
+                if [[ "$userinfo" == *":"* ]]; then
+                    username=${userinfo%%:*}
+                fi
+            fi
+
+            local new_url=""
+            if [[ -n "$username" ]]; then
+                new_url="https://${username}:${new_token}@${host}/${path_part}"
+            else
+                new_url="https://${new_token}@${host}/${path_part}"
+            fi
+
+            git config remote.origin.url "$new_url"
+            echo "\033[1;32m[$d]\033[0m Token 已更新（直接寫入 remote.origin.url）"
+            cd ..
+        fi
+    done
+}
 
 do_prune() {
     choice_projects $1
@@ -144,6 +244,8 @@ case "$1" in
     --ls-conflicted)  do_ls_conflicted $2 ;;
     --reset)          do_reset $2 ;;
     --log)            do_log $2 $3 $4 ;;
+    --show-auth)      do_show_auth $2 ;;
+    --set-token)      do_set_token $2 $3 ;;
     --pull)
         choice_projects $2; stream=${3:-"origin"}
         for d in $PROJECT_LIST; do
